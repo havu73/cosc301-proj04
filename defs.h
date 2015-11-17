@@ -119,6 +119,8 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 int 			clone(void(* fnc)(void *), void * arg, void * stack);
+int 			join (int pid);
+void 			closeFileOnExit(struct proc * p);
 // swtch.S
 void            swtch(struct context**, struct context*);
 

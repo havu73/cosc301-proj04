@@ -87,6 +87,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
+  p->thread=PROC;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -107,18 +108,29 @@ userinit(void)
 int
 growproc(int n)
 {
+	struct proc *p;
   uint sz;
-  
+  acquire(&ptable.lock);
   sz = proc->sz;
   if(n > 0){
-    if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0)
+    if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0){
+		release(&ptable.lock);
       return -1;
+   }
   } else if(n < 0){
-    if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0)
+    if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0){
+		release(&ptable.lock);
       return -1;
+    }
   }
   proc->sz = sz;
   switchuvm(proc);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if (p->parent==proc || p->parent==proc->parent){
+			p->sz=sz;
+		}
+	}
+  release(&ptable.lock);
   return 0;
 }
 // Create a new thread sharing the same address space 
@@ -126,6 +138,9 @@ growproc(int n)
 int clone(void(* fnc)(void *), void * arg, void * stack){
 	int i,pid;
 	struct proc * np;
+	if ((uint)stack%PGSIZE!=0 || (uint)stack<PGSIZE){
+		return -1;
+	}
 	if ((np=allocproc())==0)
 		return-1;
 	np->pgdir=proc->pgdir;
@@ -183,7 +198,7 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
-
+  np->thread=PROC;
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
@@ -204,45 +219,102 @@ fork(void)
   return pid;
 }
 
+void closeFileOnExit(struct proc * p){
+	int fd;
+	for(fd = 0; fd < NOFILE; fd++){
+    if(p->ofile[fd]){
+      fileclose(p->ofile[fd]);
+      p->ofile[fd] = 0;
+    }
+  }
+}
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
+//void
+//exit(void)
+//{
+  //struct proc *p;
+  //int fd;
+
+  //if(proc == initproc)
+    //panic("init exiting");
+
+  //// Close all open files.
+  //for(fd = 0; fd < NOFILE; fd++){
+    //if(proc->ofile[fd]){
+      //fileclose(proc->ofile[fd]);
+      //proc->ofile[fd] = 0;
+    //}
+  //}
+
+  //begin_op();
+  //iput(proc->cwd);
+  //end_op();
+  //proc->cwd = 0;
+
+  //acquire(&ptable.lock);
+
+  //// Parent might be sleeping in wait().
+  //wakeup1(proc->parent);
+
+  //// Pass abandoned children to init.
+  //for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    //if(p->parent == proc){
+      //p->parent = initproc;
+      //if(p->state == ZOMBIE)
+        //wakeup1(initproc);
+    //}
+  //}
+
+  //// Jump into the scheduler, never to return.
+  //proc->state = ZOMBIE;
+  //sched();
+  //panic("zombie exit");
+//}
 void
 exit(void)
 {
   struct proc *p;
-  int fd;
 
   if(proc == initproc)
     panic("init exiting");
-
   // Close all open files.
-  for(fd = 0; fd < NOFILE; fd++){
-    if(proc->ofile[fd]){
-      fileclose(proc->ofile[fd]);
-      proc->ofile[fd] = 0;
-    }
-  }
-
+  closeFileOnExit(proc);
+	
   begin_op();
   iput(proc->cwd);
   end_op();
   proc->cwd = 0;
+  
+  //KILLING CHILD THREAD
+  if (proc->thread==PROC){
+	acquire(&ptable.lock);
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+	    if(p->parent == proc && p->thread==THREAD){
+			p->killed = 1;
+      // Wake process from sleep if necessary.
+			if(p->state == SLEEPING)
+			p->state = RUNNABLE;
+		}
+	}
+	release(&ptable.lock);
+	while (join(-1)>0){}
+	}
 
   acquire(&ptable.lock);
-
   // Parent might be sleeping in wait().
   wakeup1(proc->parent);
-
   // Pass abandoned children to init.
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == proc){
-      p->parent = initproc;
-      if(p->state == ZOMBIE)
-        wakeup1(initproc);
-    }
-  }
-
+  if (proc->thread==PROC){
+	  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+	    if(p->parent == proc){//if we can find child process of the exiting process
+	      p->parent = initproc;
+	      if(p->state == ZOMBIE)
+	        wakeup1(initproc);
+	    }
+	  }
+	}
   // Jump into the scheduler, never to return.
   proc->state = ZOMBIE;
   sched();
@@ -273,31 +345,31 @@ join(int pid)
 		if (pid==-1 && p->thread==THREAD && p->parent==proc){
 			havekids=1;
 			if (p->state==ZOMBIE){
+				int result=p->pid;
 				kfree(p->kstack);
 				p->kstack = 0;
-				freevm(p->pgdir);
 				p->state = UNUSED;
 				p->pid = 0;
 				p->parent = 0;
 				p->name[0] = 0;
 				p->killed = 0;
 				release(&ptable.lock);
-				return p->pid;
+				return result;
 			}
 		}
-		if (pid>0 && p->thread=THREAD && p->parent=proc && pid==p->pid){
+		if (p->thread==THREAD && p->parent==proc && pid==p->pid){
 			havekids=1;
 			if (p->state==ZOMBIE){
+				int result=p->pid;
 				kfree(p->kstack);
 				p->kstack = 0;
-				freevm(p->pgdir);
 				p->state = UNUSED;
 				p->pid = 0;
 				p->parent = 0;
 				p->name[0] = 0;
 				p->killed = 0;
 				release(&ptable.lock);
-				return pid;
+				return result;
 			}	
 		}
     }
@@ -324,7 +396,7 @@ wait(void)
     // Scan through table looking for zombie children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != proc)
+      if(p->parent != proc || p->thread==THREAD)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){

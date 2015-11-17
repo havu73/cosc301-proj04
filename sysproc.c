@@ -106,7 +106,7 @@ int sys_clone(void){
 	return clone((void *)arg1,(void *)arg2,(void *) arg3);
 }
 
-int sus_join (void){
+int sys_join (void){
 	int arg;
 	if (argint(0,&arg)<0){
 		return -1;

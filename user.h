@@ -38,3 +38,10 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+
+//uthread.c
+int thread_create(void (*start_routine)(void*), void * arg);
+int thread_join(int pid);
+void lock_init(lock_t *lock);
+void lock_acquire(lock_t *lock);
+void lock_release(lock_t *lock);
