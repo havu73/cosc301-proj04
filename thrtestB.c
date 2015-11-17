@@ -21,45 +21,45 @@ int done = 0;
    exit(); \
 }
 
-void worker(void *arg_ptr);
+//void worker(void *arg_ptr);
 
-int main(int argc, char *argv[])
-{
-  int num_threads = 4;
-  int i;
-  ppid = getpid();
-  lock_init(&xlock);
+//int main(int argc, char *argv[])
+//{
+  //int num_threads = 4;
+  //int i;
+  //ppid = getpid();
+  //lock_init(&xlock);
 
-  for(i = 0; i < num_threads; i++) {
-    int thread_pid = thread_create(worker, 0);
-    assert(thread_pid > 0);
-  }
+  //for(i = 0; i < num_threads; i++) {
+    //int thread_pid = thread_create(worker, 0);
+    //assert(thread_pid > 0);
+  //}
 
-  while (done < num_threads) { sleep(1); }
+  //while (done < num_threads) { sleep(1); }
 
-  for(i = 0; i < num_threads; i++) {
-    int join_pid = thread_join(-1);
-    assert(join_pid > 0);
-  }
+  //for(i = 0; i < num_threads; i++) {
+    //int join_pid = thread_join(-1);
+    //assert(join_pid > 0);
+  //}
 
-  printf(1, "Without locks updating global: %d\n", global);
-  printf(1, "(Should be %d if no race condition\n", num_threads * LOOPS);
+  //printf(1, "Without locks updating global: %d\n", global);
+  //printf(1, "(Should be %d if no race condition\n", num_threads * LOOPS);
 
-  printf(1, "TEST PASSED\n");
-  exit();
-}
+  //printf(1, "TEST PASSED\n");
+  //exit();
+//}
 
 
-void worker(void *arg_ptr) {
-  int i;
+//void worker(void *arg_ptr) {
+  //int i;
 
-  for(i = 0; i < LOOPS; i++) {
-    global += 1;
-  }
+  //for(i = 0; i < LOOPS; i++) {
+    //global += 1;
+  //}
 
-  lock_acquire(&xlock);
-  done += 1;
-  lock_release(&xlock);
+  //lock_acquire(&xlock);
+  //done += 1;
+  //lock_release(&xlock);
 
-  exit();
-}
+  //exit();
+//}

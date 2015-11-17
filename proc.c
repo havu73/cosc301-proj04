@@ -121,7 +121,45 @@ growproc(int n)
   switchuvm(proc);
   return 0;
 }
-
+// Create a new thread sharing the same address space 
+// as the parent process
+int clone(void(* fnc)(void *), void * arg, void * stack){
+	int i,pid;
+	struct proc * np;
+	if ((np=allocproc())==0)
+		return-1;
+	np->pgdir=proc->pgdir;
+	np->sz=proc->sz;
+	if (proc->thread==PROC){
+		np->parent=proc;
+	}else{
+		np->parent=proc->parent;
+	}
+	*np->tf = *proc->tf;
+	// Clear %eax so that fork returns 0 in the child.
+	np->tf->eax = 0;
+	np->thread=THREAD;
+	for(i = 0; i < NOFILE; i++)
+		if(proc->ofile[i])
+			np->ofile[i] = filedup(proc->ofile[i]);
+	np->cwd = idup(proc->cwd);
+	safestrcpy(np->name,"newThread", sizeof("newThread"));
+	pid=np->pid;
+	
+	uint ustack[2];
+	uint sp= (uint)stack+PGSIZE;
+	ustack[0]=0xffffffff;
+	ustack[1]=(uint) arg;
+	sp-=8;
+	if (copyout(np->pgdir,sp,ustack,8)<0){
+		return -1;
+	}
+	np->tf->eip=(uint)fnc;
+	np->tf->esp=sp;
+	switchuvm(np);
+	np->state=RUNNABLE;
+	return pid;
+}
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
@@ -214,6 +252,68 @@ exit(void)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
+join(int pid)
+{
+  struct proc *p;
+  int havekids;
+	if (proc->thread==THREAD){//if called by a thread
+		return -1;
+	}
+	if (pid==proc->pid){//calling join on the parents' process
+		return -1;
+	}
+	if (pid<-1){
+		return -1;
+	}
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for zombie children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if (pid==-1 && p->thread==THREAD && p->parent==proc){
+			havekids=1;
+			if (p->state==ZOMBIE){
+				kfree(p->kstack);
+				p->kstack = 0;
+				freevm(p->pgdir);
+				p->state = UNUSED;
+				p->pid = 0;
+				p->parent = 0;
+				p->name[0] = 0;
+				p->killed = 0;
+				release(&ptable.lock);
+				return p->pid;
+			}
+		}
+		if (pid>0 && p->thread=THREAD && p->parent=proc && pid==p->pid){
+			havekids=1;
+			if (p->state==ZOMBIE){
+				kfree(p->kstack);
+				p->kstack = 0;
+				freevm(p->pgdir);
+				p->state = UNUSED;
+				p->pid = 0;
+				p->parent = 0;
+				p->name[0] = 0;
+				p->killed = 0;
+				release(&ptable.lock);
+				return pid;
+			}	
+		}
+    }
+
+    // No point waiting if we don't have any children.
+    if(havekids==0 || proc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(proc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+int
 wait(void)
 {
   struct proc *p;
@@ -253,7 +353,6 @@ wait(void)
     sleep(proc, &ptable.lock);  //DOC: wait-sleep
   }
 }
-
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
