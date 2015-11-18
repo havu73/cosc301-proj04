@@ -34,10 +34,10 @@ int main(int argc, char *argv[])
   int thread_pid = thread_create(spawner, (void *)arg);
   printf(1, "thread_pid %d\n", thread_pid);
   assert(thread_pid > 0);
+
   for(i = 0; i < arg; i++) {
     int thread_pid = thread_create(worker, (void *)arg);
     printf(1, "i: %d thread_pid %d\n", i, thread_pid);
-    //printf(1,"After creating thread\n");
     assert(thread_pid > 0);
   }
   printf(1, "thread creation completed (wait for 10 sec)\n");
@@ -51,7 +51,6 @@ int main(int argc, char *argv[])
     if (join_pid != -1) {
       join_count += 1;
     }
-    //printf(1,"joined thread id: %d\n",join_pid);
   }
   printf(1, "join_count %d\n", join_count);
 

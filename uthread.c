@@ -34,19 +34,16 @@ void lock_release(lock_t *lock) {
 
 int thread_join(int pid) { 
 	int i;
-	//printf(1,"Before killing: %d\n",pid);
 	uint resultpid=join(pid);
-	//printf(1,"Killing Pid: %s\n",resultpid);
 	if (resultpid>0){
-		for (i=0; i<countThr; i++){
-			if (thrstList[i]->pid==resultpid){
+		for (i=0; i<NPROC; i++){
+			if (thrstList[i]!=NULL && thrstList[i]->pid==resultpid){
+				printf(1,"found thread: %d\n",thrstList[i]->pid);
 				free(thrstList[i]->stack);
-				countThr--;
+				countThr=-1;
 				thrstList[i]=NULL;
 			}
 		}
-		//printf (1,"Done Killing\n;");
-
 	}
 	return resultpid;
 }
@@ -63,9 +60,12 @@ int thread_create(void (*start_routine)(void *), void *arg) {
    if (clone_pid>0){
 	   thrStack_t * thrst = thrstList[countThr];
 	   countThr ++;
-	   //thrst=&(thrstList[countThr-1]);
 	   thrst->pid=clone_pid;
 	   thrst->stack=stack;
 	}
    return clone_pid;
+}
+
+void print_threads(void){
+	
 }
